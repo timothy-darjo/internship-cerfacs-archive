@@ -1,0 +1,15 @@
+model:
+  model_name: GaussianDiffusion
+  training_strategy: diff_ar
+  settings_init_args:
+    timesteps: 100
+    sampling_timesteps: None
+    objective: "pred_v"
+    beta_schedule: "sigmoid"
+    schedule_fn_kwargs: {}
+    ddim_sampling_eta: 0.0
+    auto_normalize: True
+    offset_noise_strength: (0.0,)
+    min_snr_loss_weight: False
+    min_snr_gamma: 5
+    immiscible: False

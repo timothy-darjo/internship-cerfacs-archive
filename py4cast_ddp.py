@@ -1,10 +1,11 @@
 from typing import Any
 from py4cast.datasets import get_datasets
 import torch
-from torch.utils.data import DataLoader
 import os
 
 #loading the dataset - code from oscar
+
+SAVE_EVERY_EPOCH = True
 
 dataset_configuration: dict[str, Any] = {
     "periods": {
@@ -86,51 +87,6 @@ train, test, val = get_datasets(
 print(train)
 print(type(train))
 
-# choose workers based on CPU count
-num_workers = min(4, os.cpu_count())
-batch_size = 32 # adjust for GPU/CPU memory
-
-def collate_items(batch):
-    # batch is a list of Item objects
-    inputs = [item.inputs.tensor.squeeze(dim=0) for item in batch]
-    targets = [item.outputs.tensor.squeeze(dim=0) for item in batch]
-    
-    # Stack into tensors for batching
-    inputs = torch.stack(inputs, dim=0)
-    targets = torch.stack(targets, dim=0)
-    
-    return inputs, targets
-
-train_loader = DataLoader(
-    train,
-    batch_size=batch_size,            
-    shuffle=False,
-    num_workers=num_workers,
-    pin_memory=True,
-    persistent_workers=True,   # keeps workers alive between epochs
-    collate_fn=collate_items
-)
-
-val_loader = DataLoader(
-    val,
-    batch_size=batch_size,
-    shuffle=False,
-    num_workers=num_workers,
-    pin_memory=True,
-    persistent_workers=True,
-    collate_fn=collate_items
-)
-
-test_loader = DataLoader(
-    test,
-    batch_size=batch_size,
-    shuffle=False,
-    num_workers=num_workers,
-    pin_memory=True,
-    persistent_workers=True,
-    collate_fn=collate_items
-)
-
 #loading the model
 
 from mfai.pytorch.models.gaussian_diffusion import GaussianDiffusionSettings, GaussianDiffusion
@@ -158,21 +114,37 @@ model = GaussianDiffusion(
 
 loss_fn = torch.nn.MSELoss()
 optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
+epoch_count = 1
 
 print("cuda available? ",torch.cuda.is_available())
 
-for input, target in train_loader:
-    input_tensor = input.permute(0,3,1,2) #reshape to fit format
-    target_tensor = target.permute(0,3,1,2)
-    # Maintenant tu peux appeler ton modèle avec input pour générer et target pour avoir une loss
-
-    # Zero your gradients for every batch!
-    optimizer.zero_grad()
-    output = model(input_tensor)
-
-    # Compute the loss and its gradients
-    loss = loss_fn(output, target_tensor)
-    loss.backward()
-
-    # Adjust learning weights
-    optimizer.step()
+for epoch in range(epoch_count):
+    for item in train:
+        input_tensor = item.inputs.tensor.permute(0,3,1,2) #reshape to fit format
+        target_tensor = item.outputs.tensor.permute(0,3,1,2)
+        # Maintenant tu peux appeler ton modèle avec input pour générer et target pour avoir une loss
+    
+        # Zero your gradients for every batch!
+        optimizer.zero_grad()
+        output = model(input_tensor)
+    
+        # Compute the loss and its gradients
+        loss = loss_fn(output, target_tensor)
+        loss.backward()
+    
+        # Adjust learning weights
+        optimizer.step()
+    
+    if SAVE_EVERY_EPOCH:
+        torch.save({
+        "epoch": epoch,
+        "model_state_dict": model.state_dict(),
+        "optimizer_state_dict": optimizer.state_dict(),
+        "loss": loss.item(),
+        }, f"checkpoint_epoch_{epoch}.pth")
+torch.save({
+    "epoch": epoch,
+    "model_state_dict": model.state_dict(),
+    "optimizer_state_dict": optimizer.state_dict(),
+    "loss": loss.item(),
+}, "checkpoint_last.pth")

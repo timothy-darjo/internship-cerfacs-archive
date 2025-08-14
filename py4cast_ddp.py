@@ -1,6 +1,7 @@
 from typing import Any
 from py4cast.datasets import get_datasets
 import torch
+from torch.utils.data import DataLoader
 import os
 
 #loading the dataset - code from oscar
@@ -37,37 +38,41 @@ dataset_configuration: dict[str, Any] = {
       "file_format": "npy",
     },
     "params": {
+      "aro_t2m": {
+        "levels": [2],
+        "kind": "input_output",
+        },
       "aro_r2": {
         "levels": [2],
-        "kind": "output",
+        "kind": "input_output",
         },
       "aro_tp": {
         "levels": [0],
-        "kind": "output",
+        "kind": "input_output",
         },
       "aro_u10": {
         "levels": [10],
-        "kind": "output",
+        "kind": "input_output",
         },
       "aro_v10": {
         "levels": [10],
-        "kind": "output",
+        "kind": "input_output",
         },
       "aro_t": {
         "levels": [250, 500, 700, 850],
-        "kind": "output",
+        "kind": "input_output",
         },
       "aro_u": {
         "levels": [250, 500, 700, 850],
-        "kind": "output",
+        "kind": "input_output",
         },
       "aro_v": {
         "levels": [250, 500, 700, 850],
-        "kind": "output",
+        "kind": "input_output",
         },
       "aro_z": {
         "levels": [250, 500, 700, 850],
-        "kind": "output",
+        "kind": "input_output",
         },
       "arp_t": {
         "levels": [250, 500, 700, 850],
@@ -101,6 +106,7 @@ train, test, val = get_datasets(
 print(train)
 print(type(train))
 
+
 #loading the model
 
 from mfai.pytorch.models.gaussian_diffusion import GaussianDiffusionSettings, GaussianDiffusion
@@ -120,15 +126,16 @@ settings = GaussianDiffusionSettings(
 )
 
 model = GaussianDiffusion(
-  in_channels = len(train.params), #correspond bien au nombre de features
-  out_channels = len(train.params),
+  in_channels = 21, #correspond bien au nombre de features
+  out_channels = 21,
   input_shape = (train.grid.x,train.grid.y), #on part du principe que les datasets auront tous la même grille
   settings = settings
 )
 
 loss_fn = torch.nn.MSELoss()
 optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
-epoch_count = 1
+
+counter = len(train)
 
 for item in train:
     input, target = item.forcing.tensor, item.outputs.tensor
@@ -149,4 +156,6 @@ for item in train:
 
     # Adjust learning weights
     optimizer.step()
+    counter-=1
+    print(counter,"left in training")
 torch.save(model.state_dict(), "model_weights.pth")

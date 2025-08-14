@@ -5,8 +5,6 @@ import os
 
 #loading the dataset - code from oscar
 
-SAVE_EVERY_EPOCH = True
-
 dataset_configuration: dict[str, Any] = {
     "periods": {
       "train": {
@@ -102,7 +100,6 @@ train, test, val = get_datasets(
 
 print(train)
 print(type(train))
-
 
 #loading the model
 

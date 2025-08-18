@@ -1,6 +1,5 @@
 model:
   model_name: GaussianDiffusion
-  training_strategy: diff_ar
   settings_init_args:
     timesteps: 100
     sampling_timesteps: None

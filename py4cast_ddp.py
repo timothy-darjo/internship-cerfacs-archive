@@ -1,8 +1,14 @@
+import csv
+import cartopy
+import numpy as np
 from typing import Any
 from py4cast.datasets import get_datasets
+from py4cast.plots import plot_prediction, DomainInfo
 import torch
 from torch.utils.data import DataLoader
 import os
+
+OUTPUT_DIR = "../internship-cerfacs-archive/output_data/"
 
 #loading the dataset - code from oscar
 
@@ -136,8 +142,11 @@ loss_fn = torch.nn.MSELoss()
 optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
 
 counter = len(train)
+loss_scores = []
 
-for item in train:
+domain_info = DomainInfo(grid_limits=train.grid.subdomain,projection=cartopy.crs.PlateCarree())
+
+for i,item in enumerate(train):
     input, target = item.forcing.tensor, item.outputs.tensor
     input_tensor = input.permute(0,3,1,2) #reshape to fit format
     target_tensor = target.permute(0,3,1,2)
@@ -149,13 +158,27 @@ for item in train:
     # Zero your gradients for every batch!
     optimizer.zero_grad()
     output = model(input_tensor)
+    #plotting output against target
+    for j,feature_name in enumerate(item.outputs.feature_names):
+      pred = output[...,j].squeeze(0)
+      plot_target = target_tensor[...,j].squeeze(0)
+      interior_mask = torch.ones(pred.shape).detach()
+      print("interior mask",interior_mask.shape)
+      fig = plot_prediction(pred,plot_target,interior_mask,domain_info,title=feature_name+" "+str(i))
+      fig.savefig(OUTPUT_DIR+"target_output_"+feature_name+"_"+str(i)+".png")
 
     # Compute the loss and its gradients
     loss = loss_fn(output, target_tensor)
+    loss_scores.append(loss.item())
     loss.backward()
 
     # Adjust learning weights
     optimizer.step()
     counter-=1
     print(counter,"left in training")
+
+#saving loss scores
+with open(OUTPUT_DIR+"loss_scores.csv","w") as lossfile:
+  wr = csv.writer(lossfile)
+  wr.writerow(loss_scores)
 torch.save(model.state_dict(), "model_weights.pth")

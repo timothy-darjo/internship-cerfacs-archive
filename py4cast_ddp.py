@@ -160,8 +160,8 @@ for i,item in enumerate(train):
     output = model(input_tensor)
     #plotting output against target
     for j,feature_name in enumerate(item.outputs.feature_names):
-      pred = output[...,j].squeeze(0)
-      plot_target = target_tensor[...,j].squeeze(0)
+      pred = output.detach()[...,j].squeeze(0)
+      plot_target = target_tensor.detach()[...,j].squeeze(0)
       interior_mask = torch.ones(pred.shape).detach()
       print("interior mask",interior_mask.shape)
       fig = plot_prediction(pred,plot_target,interior_mask,domain_info,title=feature_name+" "+str(i))

@@ -10,10 +10,16 @@ from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 import os
 
-OUTPUT_DIR = "../internship-cerfacs-archive/output_data/"
-GRAPH_STEP = 10 #pas d'enregistrement des graphiques de comparaison.
-EPOCH_COUNT = 5 #nombre d'époch
+
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+OUTPUT_DIR = "output_data/"
+GRAPH_STEP = 1000 #pas d'enregistrement des graphiques de comparaison.
+EPOCH_COUNT = 100 #nombre d'Ã©poch
 TIMESTEPS = 2 #nombre de timesteps
+BATCH_SIZE = 4
+NUM_WORKERS = 9
 FEATURE_PLOT_WHITELIST = ["aro_t2m_2m","aro_tp_0m","aro_r2_2m","aro_u10_10m"]
 
 #loading the dataset - code from oscar
@@ -21,19 +27,19 @@ FEATURE_PLOT_WHITELIST = ["aro_t2m_2m","aro_tp_0m","aro_r2_2m","aro_u10_10m"]
 dataset_configuration: dict[str, Any] = {
     "periods": {
       "train": {
-        "start": 20230101,
-        "end": 20230101,
+        "start": 20200101,
+        "end": 20200101, #20240815,
         "obs_step": 3600,
       },
       "valid": {
-        "start": 20230102,
-        "end": 20230102,
+        "start": 20240816,
+        "end": 20240817,
         "obs_step": 3600,
         "obs_step_btw_t0": 10800,
       },
       "test": {
-        "start": 20230103,
-        "end": 20230103,
+        "start": 20240818,
+        "end": 20240819,
         "obs_step": 3600,
         "obs_step_btw_t0": 10800,
       },
@@ -115,9 +121,28 @@ train, test, val = get_datasets(
     dataset_conf=dataset_configuration,
 )
 
-print(train)
-print(type(train))
+#make DataLoaders
 
+def collate_items(batch):
+    # batch is a list of Item objects
+    inputs = [item.forcing.tensor.squeeze(dim=0) for item in batch]
+    targets = [item.outputs.tensor.squeeze(dim=0) for item in batch]
+    
+    # Stack into tensors for batching
+    inputs = torch.stack(inputs, dim=0)
+    targets = torch.stack(targets, dim=0)
+    
+    return inputs, targets
+
+train_loader = DataLoader(
+    train,
+    batch_size=BATCH_SIZE,            
+    shuffle=False,
+    num_workers=NUM_WORKERS,
+    pin_memory=True,
+    persistent_workers=True,   # keeps workers alive between epochs
+    collate_fn=collate_items
+)
 
 #loading the model
 
@@ -140,9 +165,10 @@ settings = GaussianDiffusionSettings(
 model = GaussianDiffusion(
   in_channels = 21, #correspond bien au nombre de features
   out_channels = 21,
-  input_shape = (train.grid.x,train.grid.y), #on part du principe que les datasets auront tous la même grille
+  input_shape = (train.grid.x,train.grid.y), #on part du principe que les datasets auront tous la mÃªme grille
   settings = settings
 )
+model.to(device)
 
 loss_fn = torch.nn.MSELoss()
 optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
@@ -176,12 +202,15 @@ with open(OUTPUT_DIR+"losses/loss_scores.csv","w") as lossfile:
   wr.writerow(["epoch","train_i","loss"])
 
 for epoch in range(EPOCH_COUNT):
-  for i,item in enumerate(train):
-    input, target = item.forcing.tensor, item.outputs.tensor
+  i = 0
+  for input_tensor,target_tensor in train_loader:
+    i+=1
     input_tensor = input.permute(0,3,1,2) #reshape to fit format
     target_tensor = target.permute(0,3,1,2)
+    input_tensor.to(device)
+    target_tensor.to(device)
 
-    # Maintenant tu peux appeler ton modèle avec input pour générer et target pour avoir une loss
+    # Maintenant tu peux appeler ton modÃ¨le avec input pour gÃ©nÃ©rer et target pour avoir une loss
 
     # Zero your gradients for every batch!
     optimizer.zero_grad()
@@ -206,7 +235,7 @@ for epoch in range(EPOCH_COUNT):
         fig = plot_prediction(pred=pred,target=plot_target,interior_mask=interior_mask,domain_info=domain_info,title=feature_name+" "+str(i),vrange=None)
         if i%GRAPH_STEP == 0:
           fig.savefig(OUTPUT_DIR+f"figures/target_output_{feature_name}_{epoch}-{i}.png")
-        if better_loss:
+        if is_better_loss:
           fig.savefig(OUTPUT_DIR+f"figures/target_output_{feature_name}_best_loss.png")
         plt.close(fig)
     # Adjust learning weights

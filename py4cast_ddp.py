@@ -149,6 +149,7 @@ loss_scores = []
 domain_info = train.domain_info
 interior_mask = torch.zeros_like(train[0].outputs.tensor.permute(0,3,1,2).detach()[:,0,:,:].squeeze(0))
 
+os.makedirs(OUTPUT_DIR, exist_ok=True)
 with open(OUTPUT_DIR+"loss_scores.csv","w") as lossfile:
   wr = csv.writer(lossfile)
   wr.writerow(["epoch","train_i","loss"])

@@ -12,6 +12,7 @@ import os
 OUTPUT_DIR = "../internship-cerfacs-archive/output_data/"
 GRAPH_STEP = 10 #pas d'enregistrement des graphiques de comparaison.
 EPOCH_COUNT = 5 #nombre d'époch
+TIMESTEPS = 10 #nombre de timesteps
 
 #loading the dataset - code from oscar
 
@@ -121,7 +122,7 @@ print(type(train))
 from mfai.pytorch.models.gaussian_diffusion import GaussianDiffusionSettings, GaussianDiffusion
 
 settings = GaussianDiffusionSettings(
-    timesteps = 100,
+    timesteps = TIMESTEPS,
     sampling_timesteps = None,
     objective = "pred_v",
     beta_schedule = "sigmoid",
@@ -146,21 +147,28 @@ optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
 
 loss_scores = []
 
+def save_loss_scores_entry():
+  global loss_scores
+  loss_to_save = loss_scores.pop(0)
+  with open(OUTPUT_DIR+"loss_scores.csv","a") as lossfile:
+    wr = csv.writer(lossfile)
+    wr.writerow(loss_to_save)
+
 domain_info = train.domain_info
-interior_mask = torch.zeros_like(train[0].outputs.tensor.permute(0,3,1,2).detach()[:,0,:,:].squeeze(0))
+interior_mask = torch.zeros_like(train[0].forcing.tensor.permute(0,3,1,2).detach()[:,0,:,:].squeeze(0))
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
+os.makedirs(OUTPUT_DIR+"figures/", exist_ok=True)
+os.makedirs(OUTPUT_DIR+"models/", exist_ok=True)
 with open(OUTPUT_DIR+"loss_scores.csv","w") as lossfile:
   wr = csv.writer(lossfile)
   wr.writerow(["epoch","train_i","loss"])
 
-for epoch in EPOCH_COUNT:
+for epoch in range(EPOCH_COUNT):
   for i,item in enumerate(train):
     input, target = item.forcing.tensor, item.outputs.tensor
     input_tensor = input.permute(0,3,1,2) #reshape to fit format
     target_tensor = target.permute(0,3,1,2)
-    #resizing input: not necessary?
-    print(input_tensor.shape,target_tensor.shape,"shapes")
 
     # Maintenant tu peux appeler ton modèle avec input pour générer et target pour avoir une loss
 
@@ -173,28 +181,25 @@ for epoch in EPOCH_COUNT:
         pred = output.detach()[:,j,:,:].squeeze(0)
         plot_target = target_tensor.detach()[:,j,:,:].squeeze(0)
         fig = plot_prediction(pred=pred,target=plot_target,interior_mask=interior_mask,domain_info=domain_info,title=feature_name+" "+str(i),vrange=None)
-        fig.savefig(OUTPUT_DIR+f"target_output_{feature_name}_{epoch}-{i}.png")
+        fig.savefig(OUTPUT_DIR+f"figures/target_output_{feature_name}_{epoch}-{i}.png")
         plt.close(fig)
 
     # Compute the loss and its gradients
     loss = loss_fn(output, target_tensor)
     loss.backward()
-    loss_scores.append(loss.item())
-    print(f"new loss score: {loss_scores[-1]}")
-    if len(loss_scores)>1 and loss_scores[-1] < loss_scores[-2]:
-      print(f"latest loss is better ({loss_scores[-1]} < {loss_scores[-2]}), saving model number {epoch}-{i}")
-      torch.save(model.state_dict(), f"model_weights_{epoch}-{i}.pth")
+    loss_scores.append([epoch,i,loss.item()])
+    print(f"new loss score: {loss_scores[-1][-1]}")
+    if len(loss_scores)>1 and loss_scores[-1][-1] < loss_scores[-2][-1]:
+      print(f"latest loss is better ({loss_scores[-1][-1]} < {loss_scores[-2][-1]}), saving model number {epoch}-{i}")
+      torch.save(model.state_dict(), OUTPUT_DIR+f"models/model_weights_{epoch}-{i}.pth")
     if len(loss_scores)>2:
-      loss_to_save = loss_scores.pop(0)
-      info_old_loss = [epoch,i-2]
-      if i < 0:
-        info_old_loss = [epoch-1,i-2+len(train)]
-      with open(OUTPUT_DIR+"loss_scores.csv","a") as lossfile:
-        wr = csv.writer(lossfile)
-        wr.writerow(info_old_loss+[loss_to_save])
+      save_loss_scores_entry()
     # Adjust learning weights
     optimizer.step()
     print(len(train)-i,"left in training")
 
-#saving loss scores
-torch.save(model.state_dict(), "model_weights_final.pth")
+#save remaining loss
+while len(loss_scores)>0:
+  save_loss_scores_entry()
+
+torch.save(model.state_dict(), OUTPUT_DIR+"models/model_weights_final.pth")

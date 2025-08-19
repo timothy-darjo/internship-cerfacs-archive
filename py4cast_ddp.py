@@ -1,5 +1,6 @@
 import csv
 import cartopy
+import json
 import numpy as np
 from typing import Any
 from py4cast.datasets import get_datasets
@@ -12,7 +13,7 @@ import os
 OUTPUT_DIR = "../internship-cerfacs-archive/output_data/"
 GRAPH_STEP = 10 #pas d'enregistrement des graphiques de comparaison.
 EPOCH_COUNT = 5 #nombre d'époch
-TIMESTEPS = 10 #nombre de timesteps
+TIMESTEPS = 2 #nombre de timesteps
 FEATURE_PLOT_WHITELIST = ["aro_t2m_2m","aro_tp_0m","aro_r2_2m","aro_u10_10m"]
 
 #loading the dataset - code from oscar
@@ -151,12 +152,13 @@ loss_scores = []
 def save_loss_scores_entry():
   global loss_scores
   loss_to_save = loss_scores.pop(0)
-  with open(OUTPUT_DIR+"loss_scores.csv","a") as lossfile:
+  with open(OUTPUT_DIR+"losses/loss_scores.csv","a") as lossfile:
     wr = csv.writer(lossfile)
     wr.writerow(loss_to_save)
 
 domain_info = train.domain_info
 interior_mask = torch.zeros_like(train[0].forcing.tensor.permute(0,3,1,2).detach()[:,0,:,:].squeeze(0))
+loss_mask = torch.ones_like(train[0].outputs.tensor)
 
 feature_whitelist = []
 
@@ -167,7 +169,9 @@ for feature in FEATURE_PLOT_WHITELIST:
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR+"figures/", exist_ok=True)
 os.makedirs(OUTPUT_DIR+"models/", exist_ok=True)
-with open(OUTPUT_DIR+"loss_scores.csv","w") as lossfile:
+os.makedirs(OUTPUT_DIR+"losses/", exist_ok=True)
+
+with open(OUTPUT_DIR+"losses/loss_scores.csv","w") as lossfile:
   wr = csv.writer(lossfile)
   wr.writerow(["epoch","train_i","loss"])
 
@@ -182,28 +186,33 @@ for epoch in range(EPOCH_COUNT):
     # Zero your gradients for every batch!
     optimizer.zero_grad()
     output = model(input_tensor)
-    #plotting output against target
-    if i%GRAPH_STEP == 0:
-      for j,feature_name in feature_whitelist:
-        pred = output.detach()[:,j,:,:].squeeze(0)
-        plot_target = target_tensor.detach()[:,j,:,:].squeeze(0)
-        fig = plot_prediction(pred=pred,target=plot_target,interior_mask=interior_mask,domain_info=domain_info,title=feature_name+" "+str(i),vrange=None)
-        fig.savefig(OUTPUT_DIR+f"figures/target_output_{feature_name}_{epoch}-{i}.png")
-        plt.close(fig)
 
     # Compute the loss and its gradients
     loss = loss_fn(output, target_tensor)
     loss.backward()
     loss_scores.append([epoch,i,loss.item()])
     print(f"new loss score: {loss_scores[-1][-1]}")
-    if len(loss_scores)>1 and loss_scores[-1][-1] < loss_scores[-2][-1]:
+    is_better_loss = len(loss_scores)>1 and loss_scores[-1][-1] < loss_scores[-2][-1]
+    if is_better_loss:
       print(f"latest loss is better ({loss_scores[-1][-1]} < {loss_scores[-2][-1]}), saving model number {epoch}-{i} as best_loss")
       torch.save({"epoch":epoch,"global_step":i,"state_dict":model.state_dict()}, OUTPUT_DIR+f"models/model_weights_best_loss.pth")
     if len(loss_scores)>2:
       save_loss_scores_entry()
+    #plotting output against target
+    if i%GRAPH_STEP == 0 or is_better_loss:
+      for j,feature_name in feature_whitelist:
+        pred = output.detach()[:,j,:,:].squeeze(0)
+        plot_target = target_tensor.detach()[:,j,:,:].squeeze(0)
+        fig = plot_prediction(pred=pred,target=plot_target,interior_mask=interior_mask,domain_info=domain_info,title=feature_name+" "+str(i),vrange=None)
+        if i%GRAPH_STEP == 0:
+          fig.savefig(OUTPUT_DIR+f"figures/target_output_{feature_name}_{epoch}-{i}.png")
+        if better_loss:
+          fig.savefig(OUTPUT_DIR+f"figures/target_output_{feature_name}_best_loss.png")
+        plt.close(fig)
     # Adjust learning weights
     optimizer.step()
     print(f"{len(train)-i} left in training, epoch {epoch}/{EPOCH_COUNT-1}")
+    break #REMOVE! DEBUG TOOL TO TEST COMPUTATION
 
 #save remaining loss
 while len(loss_scores)>0:

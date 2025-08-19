@@ -190,16 +190,16 @@ for epoch in range(EPOCH_COUNT):
     loss_scores.append([epoch,i,loss.item()])
     print(f"new loss score: {loss_scores[-1][-1]}")
     if len(loss_scores)>1 and loss_scores[-1][-1] < loss_scores[-2][-1]:
-      print(f"latest loss is better ({loss_scores[-1][-1]} < {loss_scores[-2][-1]}), saving model number {epoch}-{i}")
-      torch.save(model.state_dict(), OUTPUT_DIR+f"models/model_weights_{epoch}-{i}.pth")
+      print(f"latest loss is better ({loss_scores[-1][-1]} < {loss_scores[-2][-1]}), saving model number {epoch}-{i} as best_loss")
+      torch.save({"epoch":epoch,"global_step":i,"state_dict":model.state_dict()}, OUTPUT_DIR+f"models/model_weights_best_loss.pth")
     if len(loss_scores)>2:
       save_loss_scores_entry()
     # Adjust learning weights
     optimizer.step()
-    print(len(train)-i,"left in training")
+    print(f"{len(train)-i} left in training, epoch {epoch}/{EPOCH_COUNT}")
 
 #save remaining loss
 while len(loss_scores)>0:
   save_loss_scores_entry()
 
-torch.save(model.state_dict(), OUTPUT_DIR+"models/model_weights_final.pth")
+torch.save({"epoch":epoch,"global_step":i,"state_dict":model.state_dict()}, OUTPUT_DIR+f"models/model_weights_final.pth")

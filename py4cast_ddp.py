@@ -13,6 +13,7 @@ OUTPUT_DIR = "../internship-cerfacs-archive/output_data/"
 GRAPH_STEP = 10 #pas d'enregistrement des graphiques de comparaison.
 EPOCH_COUNT = 5 #nombre d'époch
 TIMESTEPS = 10 #nombre de timesteps
+FEATURE_PLOT_WHITELIST = ["aro_t2m_2m","aro_tp_0m","aro_r2_2m","aro_u10_10m"]
 
 #loading the dataset - code from oscar
 
@@ -157,6 +158,12 @@ def save_loss_scores_entry():
 domain_info = train.domain_info
 interior_mask = torch.zeros_like(train[0].forcing.tensor.permute(0,3,1,2).detach()[:,0,:,:].squeeze(0))
 
+feature_whitelist = []
+
+for feature in FEATURE_PLOT_WHITELIST:
+  j = train[0].outputs.feature_names.index(feature)
+  feature_whitelist.append((j,feature))
+
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR+"figures/", exist_ok=True)
 os.makedirs(OUTPUT_DIR+"models/", exist_ok=True)
@@ -177,7 +184,7 @@ for epoch in range(EPOCH_COUNT):
     output = model(input_tensor)
     #plotting output against target
     if i%GRAPH_STEP == 0:
-      for j,feature_name in enumerate(item.outputs.feature_names):
+      for j,feature_name in feature_whitelist:
         pred = output.detach()[:,j,:,:].squeeze(0)
         plot_target = target_tensor.detach()[:,j,:,:].squeeze(0)
         fig = plot_prediction(pred=pred,target=plot_target,interior_mask=interior_mask,domain_info=domain_info,title=feature_name+" "+str(i),vrange=None)
@@ -196,7 +203,7 @@ for epoch in range(EPOCH_COUNT):
       save_loss_scores_entry()
     # Adjust learning weights
     optimizer.step()
-    print(f"{len(train)-i} left in training, epoch {epoch}/{EPOCH_COUNT}")
+    print(f"{len(train)-i} left in training, epoch {epoch}/{EPOCH_COUNT-1}")
 
 #save remaining loss
 while len(loss_scores)>0:

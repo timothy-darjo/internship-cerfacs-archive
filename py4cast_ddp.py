@@ -6,10 +6,12 @@ from py4cast.datasets import get_datasets
 from py4cast.plots import plot_prediction, DomainInfo
 import torch
 from torch.utils.data import DataLoader
+import matplotlib.pyplot as plt
 import os
 
 OUTPUT_DIR = "../internship-cerfacs-archive/output_data/"
-GRAPH_STEP = 10 #pas d'enregistrement des graphiques de comparaison. 
+GRAPH_STEP = 10 #pas d'enregistrement des graphiques de comparaison.
+EPOCH_COUNT = 5 #nombre d'époch
 
 #loading the dataset - code from oscar
 
@@ -147,7 +149,12 @@ loss_scores = []
 domain_info = train.domain_info
 interior_mask = torch.zeros_like(train[0].outputs.tensor.permute(0,3,1,2).detach()[:,0,:,:].squeeze(0))
 
-for i,item in enumerate(train):
+with open(OUTPUT_DIR+"loss_scores.csv","w") as lossfile:
+  wr = csv.writer(lossfile)
+  wr.writerow(["epoch","train_i","loss"])
+
+for epoch in EPOCH_COUNT:
+  for i,item in enumerate(train):
     input, target = item.forcing.tensor, item.outputs.tensor
     input_tensor = input.permute(0,3,1,2) #reshape to fit format
     target_tensor = target.permute(0,3,1,2)
@@ -165,23 +172,28 @@ for i,item in enumerate(train):
         pred = output.detach()[:,j,:,:].squeeze(0)
         plot_target = target_tensor.detach()[:,j,:,:].squeeze(0)
         fig = plot_prediction(pred=pred,target=plot_target,interior_mask=interior_mask,domain_info=domain_info,title=feature_name+" "+str(i),vrange=None)
-        fig.savefig(OUTPUT_DIR+f"target_output_{feature_name}_{i}.png")
+        fig.savefig(OUTPUT_DIR+f"target_output_{feature_name}_{epoch}-{i}.png")
+        plt.close(fig)
 
     # Compute the loss and its gradients
     loss = loss_fn(output, target_tensor)
     loss.backward()
     loss_scores.append(loss.item())
-    print("loss scores so far: ",loss_scores)
+    print(f"new loss score: {loss_scores[-1]}")
     if len(loss_scores)>1 and loss_scores[-1] < loss_scores[-2]:
-      print(f"latest loss is better ({loss_scores[-1]} < {loss_scores[-2]}), saving model number {i}")
-      torch.save(model.state_dict(), f"model_weights_{i}.pth")
-
+      print(f"latest loss is better ({loss_scores[-1]} < {loss_scores[-2]}), saving model number {epoch}-{i}")
+      torch.save(model.state_dict(), f"model_weights_{epoch}-{i}.pth")
+    if len(loss_scores)>2:
+      loss_to_save = loss_scores.pop(0)
+      info_old_loss = [epoch,i-2]
+      if i < 0:
+        info_old_loss = [epoch-1,i-2+len(train)]
+      with open(OUTPUT_DIR+"loss_scores.csv","a") as lossfile:
+        wr = csv.writer(lossfile)
+        wr.writerow(info_old_loss+[loss_to_save])
     # Adjust learning weights
     optimizer.step()
     print(len(train)-i,"left in training")
 
 #saving loss scores
-with open(OUTPUT_DIR+"loss_scores.csv","w") as lossfile:
-  wr = csv.writer(lossfile)
-  wr.writerow(loss_scores)
 torch.save(model.state_dict(), "model_weights_final.pth")

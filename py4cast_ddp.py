@@ -212,7 +212,6 @@ for epoch in range(EPOCH_COUNT):
     # Adjust learning weights
     optimizer.step()
     print(f"{len(train)-i} left in training, epoch {epoch}/{EPOCH_COUNT-1}")
-    break #REMOVE! DEBUG TOOL TO TEST COMPUTATION
 
 #save remaining loss
 while len(loss_scores)>0:
